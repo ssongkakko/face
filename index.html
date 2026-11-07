@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>표정 따라쟁이 - 실시간 AI 아바타 퍼펫</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Pretendard / Noto Sans KR -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <!-- MediaPipe Face Landmarker CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
+  <style>
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    /* 부드러운 페이드인 애니메이션 */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    /* 커스텀 스크롤바 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col overflow-x-hidden">
+
+  <!-- ==================== 1. 시작 화면 (Landing) ==================== -->
+  <div id="screen-landing" class="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fade-in relative">
+    <div class="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
+      <div class="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-pink-500 blur-3xl"></div>
+      <div class="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-indigo-500 blur-3xl"></div>
+    </div>
+
+    <div class="max-w-xl mx-auto z-10 space-y-6">
+      <div class="inline-flex items-center gap-2 bg-slate-800/80 border border-slate-700/60 px-4 py-2 rounded-full text-sm font-medium text-pink-400 shadow-lg backdrop-blur">
+        <span>✨ AI 실시간 페이스 퍼펫</span>
+      </div>
+      <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
+        내 표정을 그대로 닮은 <br><span class="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400">귀여운 아바타 친구들</span>
+      </h1>
+      <p class="text-slate-300 text-base sm:text-lg max-w-md mx-auto">
+        웹캠 앞에서 웃고, 윙크하고, 고개를 까딱여보세요. 12종의 동물·과일·채소 캐릭터가 실시간으로 따라 움직여요!
+      </p>
+
+      <div class="pt-4">
+        <button id="btn-start" class="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-600 hover:to-indigo-700 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-pink-500/25 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+          <svg class="w-6 h-6 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          카메라 시작하기
+        </button>
+      </div>
+
+      <!-- 프라이버시 안내 -->
+      <div class="flex items-center justify-center gap-2 text-xs text-slate-400 pt-6">
+        <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span>영상은 내 기기 안에서만 처리되며 저장·전송되지 않아요</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 로딩 오버레이 ==================== -->
+  <div id="screen-loading" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col items-center justify-center hidden">
+    <div class="w-16 h-16 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin mb-4"></div>
+    <p id="loading-text" class="text-lg font-medium text-slate-200">얼굴 인식 모델을 불러오는 중이에요…</p>
+  </div>
+
+  <!-- ==================== 에러 모달 ==================== -->
+  <div id="modal-error" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
+      <div class="w-14 h-14 bg-rose-500/20 text-rose-400 rounded-2xl flex items-center justify-center mx-auto text-2xl">⚠️</div>
+      <h3 id="error-title" class="text-xl font-bold text-white">카메라를 사용할 수 없어요</h3>
+      <p id="error-desc" class="text-sm text-slate-300 leading-relaxed">카메라 권한이 거부되었거나 장치를 찾을 수 없습니다. 브라우저 설정에서 권한을 허용해 주세요.</p>
+      <div class="pt-2 flex gap-3">
+        <button id="btn-error-retry" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition">다시 시도</button>
+        <button id="btn-error-back" class="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold rounded-xl transition">처음으로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 2. 캐릭터 선택 화면 (Character Select) ==================== -->
+  <div id="screen-select" class="flex-1 flex flex-col max-w-5xl mx-auto w-full p-4 sm:p-8 hidden animate-fade-in">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h2 class="text-2xl sm:text-3xl font-bold text-white">캐릭터 선택하기</h2>
+        <p class="text-sm text-slate-400 mt-1">마음에 드는 귀여운 친구를 골라보세요!</p>
+      </div>
+      <button id="btn-back-landing" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl border border-slate-700 transition">처음으로</button>
+    </div>
+
+    <!-- 카테고리 탭 -->
+    <div class="flex gap-2 bg-slate-800/60 p-1.5 rounded-2xl border border-slate-700/60 mb-6 max-w-md">
+      <button class="cat-tab flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition bg-indigo-600 text-white shadow" data-category="animal">🐾 동물</button>
+      <button class="cat-tab flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition text-slate-400 hover:text-white" data-category="fruit">🍎 과일</button>
+      <button class="cat-tab flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition text-slate-400 hover:text-white" data-category="veg">🥕 채소</button>
+    </div>
+
+    <!-- 캐릭터 카드 그리드 -->
+    <div id="character-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 pb-8">
+      <!-- 동적으로 생성됨 -->
+    </div>
+
+    <div class="mt-auto pt-6 flex justify-center">
+      <button id="btn-launch" class="px-10 py-4 bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-600 hover:to-indigo-700 text-white font-bold text-lg rounded-2xl shadow-xl transition transform hover:-translate-y-0.5">
+        퍼펫 쇼 시작하기! 🚀
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 3. 메인 화면 (Main Live) ==================== -->
+  <div id="screen-main" class="flex-1 flex flex-col h-screen max-h-screen hidden relative overflow-hidden bg-slate-950">
+    
+    <!-- 상단 툴바 -->
+    <header class="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-slate-950/80 to-transparent pointer-events-auto">
+      <div class="flex items-center gap-3">
+        <button id="btn-change-char" class="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-semibold rounded-xl border border-slate-700/60 backdrop-blur transition flex items-center gap-2">
+          <span>🔄 캐릭터 바꾸기</span>
+        </button>
+        <button id="btn-change-bg" class="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-semibold rounded-xl border border-slate-700/60 backdrop-blur transition flex items-center gap-2">
+          <span>🎨 배경색 바꾸기</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="btn-recalibrate" class="px-3.5 py-2 bg-indigo-600/80 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold rounded-xl backdrop-blur transition flex items-center gap-1.5" title="정면 무표정 다시 보정">
+          <span>🎯 재보정</span>
+        </button>
+        <button id="btn-snapshot" class="px-3.5 py-2 bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold rounded-xl backdrop-blur transition flex items-center gap-1.5">
+          <span>📸 사진 저장</span>
+        </button>
+        <button id="btn-fullscreen" class="p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700/60 backdrop-blur transition" title="전체화면">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 중앙 퍼펫 캔버스 영역 -->
+    <div id="canvas-container" class="flex-1 relative flex items-center justify-center transition-colors duration-500 bg-gradient-to-b from-indigo-950/40 to-slate-900">
+      <canvas id="puppet-canvas" class="max-w-full max-h-full drop-shadow-2xl"></canvas>
+
+      <!-- 표정 표시 배지 -->
+      <div id="expression-badge" class="absolute top-20 left-1/2 transform -translate-x-1/2 bg-slate-900/80 border border-slate-700/80 text-white px-5 py-2.5 rounded-full text-base sm:text-lg font-bold shadow-2xl backdrop-blur flex items-center gap-2 transition-all duration-300">
+        <span id="badge-emoji">😐</span>
+        <span id="badge-text">기본 (무표정)</span>
+      </div>
+
+      <!-- 얼굴 미감지 안내 메시지 -->
+      <div id="face-warning" class="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-amber-500/90 text-slate-950 px-5 py-2 rounded-2xl text-sm font-bold shadow-xl backdrop-blur opacity-0 pointer-events-none transition-opacity duration-300 flex items-center gap-2">
+        <span>⚠️</span> 얼굴이 보이도록 화면 앞에 앉아주세요
+      </div>
+
+      <!-- 보정 카운트다운 오버레이 -->
+      <div id="calibration-overlay" class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-30 flex flex-col items-center justify-center hidden">
+        <div class="text-5xl sm:text-6xl font-extrabold text-pink-400 mb-3 animate-pulse" id="calib-countdown">2초</div>
+        <p class="text-lg font-semibold text-white">무표정으로 정면을 봐주세요!</p>
+        <p class="text-xs text-slate-400 mt-1">개인별 얼굴 기준점을 맞추고 있어요…</p>
+      </div>
+    </div>
+
+    <!-- 우측 하단 웹캠 미리보기 -->
+    <div class="absolute bottom-4 right-4 z-20 flex flex-col items-end gap-2">
+      <div class="relative w-36 h-28 sm:w-48 sm:h-36 bg-slate-900 rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl">
+        <video id="webcam" class="w-full h-full object-cover transform -scale-x-100" autoplay playsinline muted></video>
+        <canvas id="webcam-canvas" class="absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100"></canvas>
+        <div class="absolute top-2 left-2 bg-slate-950/70 px-2 py-0.5 rounded text-[10px] text-slate-300 font-mono">WEBCAM</div>
+      </div>
+      <!-- 랜드마크 토글 버튼 -->
+      <button id="btn-toggle-landmarks" class="px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 shadow backdrop-blur transition">
+        점선 토글: <span id="landmark-status" class="text-emerald-400">ON</span>
+      </button>
+    </div>
+
+    <!-- 숨겨진 비디오 (MediaPipe 처리용) -->
+    <video id="source-video" class="hidden" autoplay playsinline muted></video>
+  </div>
+
+
+  <!-- ==================== 자바스크립트 로직 ==================== -->
+  <script>
+    // --- [1. 캐릭터 정의 및 메타데이터] ---
+    const CHARACTERS = {
+      animal: [
+        { id: 'cat', name: '고양이', desc: '도도하고 귀여운 냥이', color: '#ffedd5', earColor: '#fb923c' },
+        { id: 'dog', name: '강아지', desc: '활발하고 충직한 멍멍이', color: '#fef3c7', earColor: '#d97706' },
+        { id: 'rabbit', name: '토끼', desc: '쫑긋 귀를 가진 토끼', color: '#fce7f3', earColor: '#f472b6' },
+        { id: 'panda', name: '판다', desc: '대나무를 사랑하는 판다', color: '#f8fafc', earColor: '#334155' }
+      ],
+      fruit: [
+        { id: 'strawberry', name: '딸기', desc: '새콤달콤 상큼한 딸기', color: '#fee2e2', earColor: '#ef4444' },
+        { id: 'apple', name: '사과', desc: '빨갛고 동글동글한 사과', color: '#fef2f2', earColor: '#dc2626' },
+        { id: 'banana', name: '바나나', desc: '길쭉하고 부드러운 바나나', color: '#fef9c3', earColor: '#eab308' },
+        { id: 'watermelon', name: '수박', desc: '시원하고 달콤한 수박', color: '#dcfce7', earColor: '#22c55e' }
+      ],
+      veg: [
+        { id: 'carrot', name: '당근', desc: '주황빛 아삭아삭 당근', color: '#ffedd5', earColor: '#f97316' },
+        { id: 'broccoli', name: '브로콜리', desc: '건강 만점 뽀글이 브로콜리', color: '#ecfdf5', earColor: '#10b981' },
+        { id: 'eggplant', name: '가지', desc: '보랏빛 길쭉이 가지', color: '#f3e8ff', earColor: '#a855f7' },
+        { id: 'corn', name: '옥수수', desc: '노란 알갱이 톡톡 옥수수', color: '#fef9c3', earColor: '#facc15' }
+      ]
+    };
+
+    // --- [2. 설정 및 임계값 상수 (조절 가능)] ---
+    const CONFIG = {
+      smileThreshold: 0.38,
+      jawOpenThreshold: 0.35,
+      blinkThreshold: 0.52,
+      winkDiffThreshold: 0.30,
+      browDownThreshold: 0.32,
+      frownThreshold: 0.30,
+      cheekPuffThreshold: 0.40,
+      tongueOutThreshold: 0.35,
+      debounceFrames: 4,
+      bgColors: [
+        'bg-gradient-to-b from-indigo-950/40 to-slate-900',
+        'bg-gradient-to-b from-pink-950/40 to-slate-900',
+        'bg-gradient-to-b from-emerald-950/40 to-slate-900',
+        'bg-gradient-to-b from-amber-950/40 to-slate-900',
+        'bg-gradient-to-b from-purple-950/40 to-slate-900'
+      ]
+    };
+
+    // --- [3. 앱 상태 변수] ---
+    let currentCategory = 'animal';
+    let selectedCharId = 'cat';
+    let currentBgIndex = 0;
+    let showLandmarks = true;
+
+    let faceLandmarker = null;
+    let webcamRunning = false;
+    let videoElement = null;
+    let sourceVideo = null;
+    let canvasElement = null;
+    let ctx = null;
+    let webcamCanvas = null;
+    let webcamCtx = null;
+    let animationFrameId = null;
+
+    // 보정 및 평활화(EMA) 변수
+    let isCalibrating = false;
+    let calibrationStartTime = 0;
+    let baseline = { yaw: 0, pitch: 0, roll: 0 };
+    
+    let smoothData = {
+      yaw: 0, pitch: 0, roll: 0,
+      jawOpen: 0, mouthSmile: 0, 
+      eyeLeft: 1, eyeRight: 1,
+      browDown: 0, frown: 0, cheekPuff: 0, tongueOut: 0
+    };
+
+    let currentExpression = { name: '기본 (무표정)', emoji: '😐', key: 'neutral' };
+    let expressionFrameCount = 0;
+    let pendingExpression = { name: '기본 (무표정)', emoji: '😐', key: 'neutral' };
+    let noFaceCounter = 0;
+
+    // --- [4. DOM 요소 참조] ---
+    const screens = {
+      landing: document.getElementById('screen-landing'),
+      loading: document.getElementById('screen-loading'),
+      error: document.getElementById('modal-error'),
+      select: document.getElementById('screen-select'),
+      main: document.getElementById('screen-main')
+    };
+
+    // --- [5. 초기화 및 이벤트 리스너] ---
+    window.addEventListener('DOMContentLoaded', () => {
+      initCharacterGrid();
+      setupEventListeners();
+    });
+
+    function showScreen(screenName) {
+      Object.values(screens).forEach(el => el.classList.add('hidden'));
+      if (screens[screenName]) {
+        screens[screenName].classList.remove('hidden');
+      }
+    }
+
+    function setupEventListeners() {
+      // 시작 화면 -> 캐릭터 선택
+      document.getElementById('btn-start').addEventListener('click', async () => {
+        showScreen('loading');
+        document.getElementById('loading-text').textContent = '얼굴 인식 모델을 불러오는 중이에요…';
+        try {
+          await initMediaPipe();
+          showScreen('select');
+        } catch (err) {
+          console.error(err);
+          showErrorModal('모델 로딩 실패', 'MediaPipe 모델을 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.');
+        }
+      });
+
+      // 에러 모달 버튼
+      document.getElementById('btn-error-retry').addEventListener('click', () => {
+        screens.error.classList.add('hidden');
+        document.getElementById('btn-start').click();
+      });
+      document.getElementById('btn-error-back').addEventListener('click', () => {
+        screens.error.classList.add('hidden');
+        showScreen('landing');
+      });
+
+      // 캐릭터 선택 -> 처음으로
+      document.getElementById('btn-back-landing').addEventListener('click', () => {
+        showScreen('landing');
+      });
+
+      // 카테고리 탭 전환
+      document.querySelectorAll('.cat-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+          document.querySelectorAll('.cat-tab').forEach(t => {
+            t.className = 'cat-tab flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition text-slate-400 hover:text-white';
+          });
+          e.currentTarget.className = 'cat-tab flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition bg-indigo-600 text-white shadow';
+          currentCategory = e.currentTarget.dataset.category;
+          initCharacterGrid();
+        });
+      });
+
+      // 퍼펫 쇼 시작 (메인 화면 진입 및 카메라 켜기)
+      document.getElementById('btn-launch').addEventListener('click', async () => {
+        showScreen('loading');
+        document.getElementById('loading-text').textContent = '카메라 연결을 준비 중이에요…';
+        try {
+          await startWebcam();
+          showScreen('main');
+          resizeCanvas();
+          startCalibration();
+          startPredictionLoop();
+        } catch (err) {
+          console.error(err);
+          showErrorModal('카메라 권한 오류', '웹캠 권한이 거부되었거나 다른 프로그램에서 사용 중입니다. 브라우저 설정에서 카메라 권한을 확인해주세요.');
+        }
+      });
+
+      // 메인 화면 컨트롤
+      document.getElementById('btn-change-char').addEventListener('click', () => {
+        stopWebcamStream();
+        showScreen('select');
+      });
+
+      document.getElementById('btn-change-bg').addEventListener('click', () => {
+        currentBgIndex = (currentBgIndex + 1) % CONFIG.bgColors.length;
+        const container = document.getElementById('canvas-container');
+        container.className = `flex-1 relative flex items-center justify-center transition-colors duration-500 ${CONFIG.bgColors[currentBgIndex]}`;
+      });
+
+      document.getElementById('btn-recalibrate').addEventListener('click', () => {
+        startCalibration();
+      });
+
+      document.getElementById('btn-snapshot').addEventListener('click', () => {
+        takeSnapshot();
+      });
+
+      document.getElementById('btn-fullscreen').addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(err => {
+            alert(`전체화면 전환 실패: ${err.message}`);
+          });
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        }
+      });
+
+      document.getElementById('btn-toggle-landmarks').addEventListener('click', () => {
+        showLandmarks = !showLandmarks;
+        document.getElementById('landmark-status').textContent = showLandmarks ? 'ON' : 'OFF';
+        document.getElementById('landmark-status').className = showLandmarks ? 'text-emerald-400' : 'text-rose-400';
+      });
+
+      window.addEventListener('resize', () => {
+        resizeCanvas();
+      });
+    }
+
+    function showErrorModal(title, desc) {
+      document.getElementById('error-title').textContent = title;
+      document.getElementById('error-desc').textContent = desc;
+      screens.loading.classList.add('hidden');
+      screens.error.classList.remove('hidden');
+    }
+
+    // --- [6. 캐릭터 그리드 렌더링] ---
+    function initCharacterGrid() {
+      const grid = document.getElementById('character-grid');
+      grid.innerHTML = '';
+      const list = CHARACTERS[currentCategory] || [];
+
+      list.forEach(char => {
+        const isSelected = char.id === selectedCharId;
+        const card = document.createElement('div');
+        card.className = `cursor-pointer bg-slate-800/80 border-2 rounded-2xl p-4 flex flex-col items-center text-center transition-all duration-300 hover:scale-105 ${isSelected ? 'border-pink-500 shadow-lg shadow-pink-500/20 bg-slate-800' : 'border-slate-700/60 hover:border-slate-600'}`;
+        card.innerHTML = `
+          <div class="w-20 h-20 rounded-2xl flex items-center justify-center mb-3 shadow-inner" style="background-color: ${char.color};">
+            <!-- 미니 SVG 미리보기 -->
+            <svg class="w-14 h-14" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" fill="${char.earColor}" opacity="0.3"/>
+              <circle cx="50" cy="50" r="32" fill="${char.color}"/>
+              <circle cx="38" cy="45" r="5" fill="#1e293b"/>
+              <circle cx="62" cy="45" r="5" fill="#1e293b"/>
+              <path d="M 45 60 Q 50 65 55 60" stroke="#1e293b" stroke-width="3" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3 class="font-bold text-white text-base">${char.name}</h3>
+          <p class="text-xs text-slate-400 mt-1 line-clamp-1">${char.desc}</p>
+        `;
+        card.addEventListener('click', () => {
+          selectedCharId = char.id;
+          initCharacterGrid();
+        });
+        grid.appendChild(card);
+      });
+    }
+
+    // --- [7. MediaPipe 및 웹캠 초기화] ---
+    async function initMediaPipe() {
+      if (faceLandmarker) return;
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      );
+      faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+          delegate: "GPU"
+        },
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: true,
+        runningMode: "VIDEO",
+        numFaces: 1
+      });
+    }
+
+    async function startWebcam() {
+      videoElement = document.getElementById('webcam');
+      sourceVideo = document.getElementById('source-video');
+      canvasElement = document.getElementById('puppet-canvas');
+      ctx = canvasElement.getContext('2d');
+      webcamCanvas = document.getElementById('webcam-canvas');
+      webcamCtx = webcamCanvas.getContext('2d');
+
+      const constraints = {
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      videoElement.srcObject = stream;
+      sourceVideo.srcObject = stream;
+
+      return new Promise((resolve) => {
+        sourceVideo.onloadedmetadata = () => {
+          sourceVideo.play();
+          webcamRunning = true;
+          resolve();
+        };
+      });
+    }
+
+    function stopWebcamStream() {
+      webcamRunning = false;
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      if (videoElement && videoElement.srcObject) {
+        videoElement.srcObject.getTracks().forEach(track => track.stop());
+      }
+      if (sourceVideo && sourceVideo.srcObject) {
+        sourceVideo.srcObject.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function resizeCanvas() {
+      if (!canvasElement) return;
+      const container = document.getElementById('canvas-container');
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      canvasElement.width = Math.min(w, 800);
+      canvasElement.height = Math.min(h, 600);
+
+      if (webcamCanvas) {
+        webcamCanvas.width = webcamCanvas.parentElement.clientWidth;
+        webcamCanvas.height = webcamCanvas.parentElement.clientHeight;
+      }
+    }
+
+    // --- [8. 보정 (Calibration) 루프] ---
+    function startCalibration() {
+      isCalibrating = true;
+      calibrationStartTime = performance.now();
+      const overlay = document.getElementById('calibration-overlay');
+      const countdown = document.getElementById('calib-countdown');
+      overlay.classList.remove('hidden');
+
+      let timeLeft = 2;
+      countdown.textContent = `${timeLeft}초`;
+      const timer = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          countdown.textContent = `${timeLeft}초`;
+        } else {
+          clearInterval(timer);
+          overlay.classList.add('hidden');
+          isCalibrating = false;
+        }
+      }, 1000);
+    }
+
+    // --- [9. 추론 및 메인 렌더링 루프] ---
+    let lastVideoTime = -1;
+
+    function startPredictionLoop() {
+      async function predict() {
+        if (!webcamRunning) return;
+
+        if (sourceVideo.currentTime !== lastVideoTime) {
+          lastVideoTime = sourceVideo.currentTime;
+          let results = null;
+          try {
+            results = faceLandmarker.detectForVideo(sourceVideo, performance.now());
+          } catch (e) {
+            console.error(e);
+          }
+
+          if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
+            noFaceCounter = 0;
+            document.getElementById('face-warning').style.opacity = '0';
+            
+            const landmarks = results.faceLandmarks[0];
+            const blendshapes = results.faceBlendshapes[0]?.categories || [];
+            const matrix = results.facialTransformationMatrixes[0]?.data || null;
+
+            processFaceData(landmarks, blendshapes, matrix);
+            drawWebcamLandmarks(landmarks);
+          } else {
+            noFaceCounter++;
+            if (noFaceCounter > 15) {
+              document.getElementById('face-warning').style.opacity = '1';
+            }
+          }
+        }
+
+        renderPuppetScene();
+        if (webcamRunning) {
+          animationFrameId = requestAnimationFrame(predict);
+        }
+      }
+      animationFrameId = requestAnimationFrame(predict);
+    }
+
+    // --- [10. 얼굴 데이터 처리 및 EMA 평활화] ---
+    function processFaceData(landmarks, blendshapes, matrix) {
+      // 1) Blendshape 값 추출 맵 생성
+      const bsMap = {};
+      blendshapes.forEach(item => {
+        bsMap[item.categoryName] = item.score;
+      });
+
+      const rawJawOpen = bsMap['jawOpen'] || 0;
+      const rawSmileL = bsMap['mouthSmileLeft'] || 0;
+      const rawSmileR = bsMap['mouthSmileRight'] || 0;
+      const rawSmile = (rawSmileL + rawSmileR) / 2;
+      const rawEyeBlinkL = bsMap['eyeBlinkLeft'] || 0;
+      const rawEyeBlinkR = bsMap['eyeBlinkRight'] || 0;
+      const rawBrowDown = Math.max(bsMap['browDownLeft'] || 0, bsMap['browDownRigh'] || bsMap['browDownRight'] || 0);
+      const rawFrown = Math.max(bsMap['mouthFrownLeft'] || 0, bsMap['mouthFrownRight'] || 0);
+      const rawCheekPuff = bsMap['cheekPuff'] || 0;
+      const rawTongueOut = bsMap['tongueOut'] || 0;
+
+      // 2) 회전 행렬에서 Euler 각도 추출 (Yaw, Pitch, Roll)
+      let rawYaw = 0, rawPitch = 0, rawRoll = 0;
+      if (matrix && matrix.length === 16) {
+        // 간단한 회전 행렬 분해 (3x3 부분)
+        // m00, m01, m02 ...
+        const m11 = matrix[0], m12 = matrix[1], m13 = matrix[2];
+        const m21 = matrix[4], m22 = matrix[5], m23 = matrix[6];
+        const m31 = matrix[8], m32 = matrix[9], m33 = matrix[10];
+
+        rawPitch = Math.asin(-m23);
+        if (Math.cos(rawPitch) > 0.001) {
+          rawYaw = Math.atan2(m13, m33);
+          rawRoll = Math.atan2(m21, m22);
+        } else {
+          rawYaw = Math.atan2(-m31, m11);
+          rawRoll = 0;
+        }
+
+        // 라디안을 도로 변환
+        rawYaw = rawYaw * (180 / Math.PI);
+        rawPitch = rawPitch * (180 / Math.PI);
+        rawRoll = rawRoll * (180 / Math.PI);
+      }
+
+      if (isCalibrating) {
+        baseline.yaw = rawYaw;
+        baseline.pitch = rawPitch;
+        baseline.roll = rawRoll;
+      }
+
+      // 상대 각도 계산 및 제한 (한계값 적용)
+      const targetYaw = Math.max(-35, Math.min(35, rawYaw - baseline.yaw));
+      const targetPitch = Math.max(-30, Math.min(30, rawPitch - baseline.pitch));
+      const targetRoll = Math.max(-25, Math.min(25, rawRoll - baseline.roll));
+
+      // 3) 지수 이동 평균 (EMA) 보간 적용 (부드러운 움직임)
+      const alpha = 0.25;
+      smoothData.yaw += (targetYaw - smoothData.yaw) * alpha;
+      smoothData.pitch += (targetPitch - smoothData.pitch) * alpha;
+      smoothData.roll += (targetRoll - smoothData.roll) * alpha;
+
+      smoothData.jawOpen += (rawJawOpen - smoothData.jawOpen) * alpha;
+      smoothData.mouthSmile += (rawSmile - smoothData.mouthSmile) * alpha;
+      smoothData.eyeLeft += ((1 - rawEyeBlinkL) - smoothData.eyeLeft) * alpha;
+      smoothData.eyeRight += ((1 - rawEyeBlinkR) - smoothData.eyeRight) * alpha;
+      smoothData.browDown += (rawBrowDown - smoothData.browDown) * alpha;
+      smoothData.frown += (rawFrown - smoothData.frown) * alpha;
+      smoothData.cheekPuff += (rawCheekPuff - smoothData.cheekPuff) * alpha;
+      smoothData.tongueOut += (rawTongueOut - smoothData.tongueOut) * alpha;
+
+      // 4) 표정 판별 로직 (우선순위 및 디바운스 적용)
+      determineExpression(rawSmile, rawJawOpen, rawEyeBlinkL, rawEyeBlinkR, rawBrowDown, rawFrown, rawCheekPuff, rawTongueOut);
+    }
+
+    function determineExpression(smile, jaw, blinkL, blinkR, browDown, frown, cheekPuff, tongueOut) {
+      let expr = { name: '기본 (무표정)', emoji: '😐', key: 'neutral' };
+
+      const isBlinking = blinkL > CONFIG.blinkThreshold && blinkR > CONFIG.blinkThreshold;
+      const isWinkL = blinkL > CONFIG.blinkThreshold && blinkR < (CONFIG.blinkThreshold - CONFIG.winkDiffThreshold);
+      const isWinkR = blinkR > CONFIG.blinkThreshold && blinkL < (CONFIG.blinkThreshold - CONFIG.winkDiffThreshold);
+
+      if (tongueOut > CONFIG.tongueOutThreshold) {
+        expr = { name: '메롱 😛', emoji: '😛', key: 'tongue' };
+      } else if (cheekPuff > CONFIG.cheekPuffThreshold) {
+        expr = { name: '볼 부풀리기 🤭', emoji: '🤭', key: 'puff' };
+      } else if (isWinkL) {
+        expr = { name: '왼쪽 윙크 😉', emoji: '😉', key: 'winkL' };
+      } else if (isWinkR) {
+        expr = { name: '오른쪽 윙크 😉', emoji: '😉', key: 'winkR' };
+      } else if (isBlinking) {
+        expr = { name: '눈 깜빡임 😌', emoji: '😌', key: 'blink' };
+      } else if (browDown > CONFIG.browDownThreshold && frown > 0.2) {
+        expr = { name: '화남 😡', emoji: '😡', key: 'angry' };
+      } else if (smile > CONFIG.smileThreshold && jaw > 0.25) {
+        expr = { name: '활짝 웃음 😄', emoji: '😄', key: 'bigSmile' };
+      } else if (smile > CONFIG.smileThreshold) {
+        expr = { name: '웃음 😊', emoji: '😊', key: 'smile' };
+      } else if (jaw > CONFIG.jawOpenThreshold && smile < 0.2) {
+        expr = { name: '놀람 / 입 벌림 😮', emoji: '😮', key: 'surprised' };
+      } else if (frown > CONFIG.frownThreshold) {
+        expr = { name: '슬픔 😢', emoji: '😢', key: 'sad' };
+      }
+
+      // 디바운스 처리 (빠른 깜빡임 방지)
+      if (expr.key === pendingExpression.key) {
+        expressionFrameCount++;
+        if (expressionFrameCount >= CONFIG.debounceFrames && currentExpression.key !== expr.key) {
+          currentExpression = expr;
+          updateExpressionUI(expr);
+        }
+      } else {
+        pendingExpression = expr;
+        expressionFrameCount = 0;
+      }
+    }
+
+    function updateExpressionUI(expr) {
+      document.getElementById('badge-emoji').textContent = expr.emoji;
+      document.getElementById('badge-text').textContent = expr.name;
+    }
+
+    // --- [11. 웹캠 랜드마크 점선 미리보기 그리기] ---
+    function drawWebcamLandmarks(landmarks) {
+      if (!webcamCtx || !webcamCanvas) return;
+      webcamCtx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+
+      if (!showLandmarks) return;
+
+      webcamCtx.fillStyle = '#38bdf8';
+      webcamCtx.strokeStyle = '#f43f5e';
+      webcamCtx.lineWidth = 1;
+
+      // 주요 얼굴 윤곽 일부 포인트만 가볍게 드로잉
+      const indices = [10, 152, 234, 454, 33, 263, 13, 14];
+      landmarks.forEach((pt, idx) => {
+        if (indices.includes(idx)) {
+          const x = pt.x * webcamCanvas.width;
+          const y = pt.y * webcamCanvas.height;
+          webcamCtx.beginPath();
+          webcamCtx.arc(x, y, 2.5, 0, 2 * Math.PI);
+          webcamCtx.fill();
+        }
+      });
+    }
+
+
+    // --- [12. 캐릭터 렌더링 엔진 (Canvas 2D 파츠 분리 및 인터페이스)] ---
+    function renderPuppetScene() {
+      if (!ctx || !canvasElement) return;
+      const w = canvasElement.width;
+      const h = canvasElement.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // 현재 선택된 캐릭터 메타데이터 가져오기
+      const charMeta = getSelectedCharacterMeta();
+
+      // 미세 숨쉬기 (Idle Breathe) 애니메이션
+      const time = performance.now() / 1000;
+      const breatheOffset = Math.sin(time * 3) * 2;
+
+      ctx.save();
+      // 캔버스 중심 이동
+      ctx.translate(w / 2, h / 2 + breatheOffset);
+
+      // 고개 회전 및 기울임 적용 (변환 행렬 기반)
+      const yawRad = smoothData.yaw * (Math.PI / 180);
+      const pitchRad = smoothData.pitch * (Math.PI / 180);
+      const rollRad = smoothData.roll * (Math.PI / 180);
+
+      ctx.rotate(rollRad * 0.8);
+      ctx.translate(yawRad * 15, pitchRad * 15);
+
+      // 1) 귀 / 잎 / 꼭지 등 부속 파츠 (약간 지연되는 스프링 효과)
+      const earLagX = -yawRad * 8;
+      const earLagY = -pitchRad * 8;
+      drawCharacterAppendix(ctx, charMeta, earLagX, earLagY);
+
+      // 2) 몸 / 얼굴 바탕 베이스
+      drawCharacterBase(ctx, charMeta);
+
+      // 3) 볼 (Blush)
+      drawCharacterBlush(ctx, currentExpression.key);
+
+      // 4) 눈썹 (Eyebrows)
+      drawCharacterEyebrows(ctx, smoothData.browDown, currentExpression.key, yawRad);
+
+      // 5) 눈 (Eyes & Eyelids & Highlights)
+      drawCharacterEyes(ctx, smoothData.eyeLeft, smoothData.eyeRight, currentExpression.key, yawRad);
+
+      // 6) 입 (Mouth & Tongue)
+      drawCharacterMouth(ctx, smoothData.jawOpen, smoothData.mouthSmile, currentExpression.key, smoothData.tongueOut);
+
+      ctx.restore();
+
+      // 얼굴 미감지 상태일 때 졸린 눈 오버레이 표현 등 처리 가능
+      if (noFaceCounter > 15) {
+        // 졸린 대기 상태 표현
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.4)';
+        ctx.font = 'bold 20px "Noto Sans KR", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('😴 화면 앞에 앉아주세요', 0, -h/2 + 40);
+        ctx.restore();
+      }
+    }
+
+    function getSelectedCharacterMeta() {
+      for (let cat in CHARACTERS) {
+        const found = CHARACTERS[cat].find(c => c.id === selectedCharId);
+        if (found) return found;
+      }
+      return CHARACTERS.animal[0];
+    }
+
+    // --- 캐릭터별 부속 파츠 그리기 (귀, 잎, 꼭지 등) ---
+    function drawCharacterAppendix(ctx, char, lagX, lagY) {
+      ctx.save();
+      ctx.fillStyle = char.earColor;
+
+      if (selectedCharId === 'cat') {
+        // 고양이 귀
+        ctx.beginPath();
+        ctx.moveTo(-75 + lagX, -40 + lagY);
+        ctx.lineTo(-110 + lagX, -100 + lagY);
+        ctx.lineTo(-40 + lagX, -70 + lagY);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(75 + lagX, -40 + lagY);
+        ctx.lineTo(110 + lagX, -100 + lagY);
+        ctx.lineTo(40 + lagX, -70 + lagY);
+        ctx.fill();
+      } else if (selectedCharId === 'dog') {
+        // 강아지 귀 (늘어진 귀)
+        ctx.beginPath();
+        ctx.ellipse(-85 + lagX, -10 + lagY, 22, 45, Math.PI / 6, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(85 + lagX, -10 + lagY, 22, 45, -Math.PI / 6, 0, 2 * Math.PI);
+        ctx.fill();
+      } else if (selectedCharId === 'rabbit') {
+        // 토끼 긴 귀
+        ctx.beginPath();
+        ctx.ellipse(-35 + lagX, -110 + lagY, 16, 60, -Math.PI / 12, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(35 + lagX, -110 + lagY, 16, 60, Math.PI / 12, 0, 2 * Math.PI);
+        ctx.fill();
+      } else if (selectedCharId === 'panda') {
+        // 판다 귀 및 눈 주변 검은 무늬
+        ctx.beginPath();
+        ctx.arc(-70 + lagX, -65 + lagY, 22, 0, 2 * Math.PI);
+        ctx.arc(70 + lagX, -65 + lagY, 22, 0, 2 * Math.PI);
+        ctx.fillStyle = '#1e293b';
+        ctx.fill();
+      } else if (selectedCharId === 'strawberry' || selectedCharId === 'apple') {
+        // 과일 꼭지 및 잎
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.ellipse(0 + lagX, -95 + lagY, 25, 10, 0, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillRect(-4 + lagX, -115 + lagY, 8, 25);
+      } else if (selectedCharId === 'banana') {
+        // 바나나 꼭지
+        ctx.fillStyle = '#854d0e';
+        ctx.fillRect(-15 + lagX, -95 + lagY, 30, 14);
+      } else if (selectedCharId === 'watermelon') {
+        // 수박 줄무늬 패턴은 베이스에서 처리
+      } else if (selectedCharId === 'carrot') {
+        // 당근 초록 잎사귀
+        ctx.fillStyle = '#16a34a';
+        ctx.beginPath();
+        ctx.moveTo(-15 + lagX, -85 + lagY);
+        ctx.lineTo(-30 + lagX, -125 + lagY);
+        ctx.lineTo(-5 + lagX, -95 + lagY);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(15 + lagX, -85 + lagY);
+        ctx.lineTo(30 + lagX, -125 + lagY);
+        ctx.lineTo(5 + lagX, -95 + lagY);
+        ctx.fill();
+      } else if (selectedCharId === 'broccoli') {
+        // 브로콜리 윗부분 몽글몽글한 초록 송이
+        ctx.fillStyle = '#059669';
+        ctx.beginPath();
+        ctx.arc(0 + lagX, -70 + lagY, 55, 0, 2 * Math.PI);
+        ctx.arc(-35 + lagX, -50 + lagY, 35, 0, 2 * Math.PI);
+        ctx.arc(35 + lagX, -50 + lagY, 35, 0, 2 * Math.PI);
+        ctx.fill();
+      } else if (selectedCharId === 'corn') {
+        // 옥수수 껍질 날개
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.moveTo(-60, 40);
+        ctx.lineTo(-90, -20);
+        ctx.lineTo(-50, -10);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(60, 40);
+        ctx.lineTo(90, -20);
+        ctx.lineTo(50, -10);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // --- 캐릭터 얼굴/몸체 베이스 그리기 ---
+    function drawCharacterBase(ctx, char) {
+      ctx.save();
+      ctx.fillStyle = char.color;
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 4;
+
+      if (selectedCharId === 'carrot' || selectedCharId === 'eggplant' || selectedCharId === 'banana') {
+        // 물방울/원뿔형 형태 (당근, 가지, 바나나)
+        ctx.beginPath();
+        ctx.moveTo(0, -90);
+        ctx.bezierCurveTo(70, -40, 70, 70, 0, 95);
+        ctx.bezierCurveTo(-70, 70, -70, -40, 0, -90);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        // 기본 둥근 얼굴/몸체 (동물, 사과, 딸기 등)
+        ctx.beginPath();
+        ctx.arc(0, 0, 85, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // 판다의 경우 눈 주변 하얀 얼굴 속 검은 패치 렌더링
+      if (selectedCharId === 'panda') {
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.ellipse(-32, -10, 24, 18, -Math.PI / 8, 0, 2 * Math.PI);
+        ctx.ellipse(32, -10, 24, 18, Math.PI / 8, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // --- 볼 (Blush) 그리기 ---
+    function drawCharacterBlush(ctx, exprKey) {
+      if (exprKey === 'angry' || exprKey === 'sad') {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.4)'; // 화남/슬픔 시 붉은 기운
+      } else {
+        ctx.fillStyle = 'rgba(244, 114, 182, 0.35)'; // 평소 핑크 볼
+      }
+      ctx.beginPath();
+      ctx.arc(-42, 18, 14, 0, 2 * Math.PI);
+      ctx.arc(42, 18, 14, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    // --- 눈썹 (Eyebrows) 그리기 (표정 연동) ---
+    function drawCharacterEyebrows(ctx, browDownVal, exprKey, yawRad) {
+      ctx.save();
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+
+      let leftY = -32;
+      let rightY = -32;
+      let leftAngle = 0;
+      let rightAngle = 0;
+
+      if (exprKey === 'angry') {
+        // 화남: V자 눈썹 (눈썹 안쪽이 내려감)
+        leftY -= 5;
+        rightY -= 5;
+        leftAngle = 0.4;
+        rightAngle = -0.4;
+      } else if (exprKey === 'sad') {
+        // 슬픔: 팔자 눈썹 (눈썹 바깥쪽이 내려감)
+        leftAngle = -0.4;
+        rightAngle = 0.4;
+      } else if (browDownVal > 0.3) {
+        leftAngle = 0.2;
+        rightAngle = -0.2;
+      }
+
+      // 왼쪽 눈썹
+      ctx.save();
+      ctx.translate(-35 + yawRad * 5, leftY);
+      ctx.rotate(leftAngle);
+      ctx.beginPath();
+      ctx.moveTo(-12, 0);
+      ctx.lineTo(12, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      // 오른쪽 눈썹
+      ctx.save();
+      ctx.translate(35 + yawRad * 5, rightY);
+      ctx.rotate(rightAngle);
+      ctx.beginPath();
+      ctx.moveTo(-12, 0);
+      ctx.lineTo(12, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.restore();
+    }
+
+    // --- 눈 (Eyes) 그리기 (깜빡임, 윙크, 크기 조절) ---
+    function drawCharacterEyes(ctx, eyeL, eyeR, exprKey, yawRad) {
+      ctx.save();
+      const eyeXOffset = yawRad * 10;
+
+      // 왼쪽 눈
+      drawSingleEye(ctx, -35 + eyeXOffset, -12, eyeL, exprKey === 'winkL');
+      // 오른쪽 눈
+      drawSingleEye(ctx, 35 + eyeXOffset, -12, eyeR, exprKey === 'winkR');
+
+      ctx.restore();
+    }
+
+    function drawSingleEye(ctx, x, y, openness, isWinking) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      if (isWinking || openness < 0.15) {
+        // 윙크 또는 감은 눈 (아치형 선)
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, Math.PI, 2 * Math.PI, true);
+        ctx.stroke();
+      } else {
+        // 반짝이는 큰 눈 (오픈)
+        const scaleY = Math.max(0.15, openness);
+        
+        ctx.fillStyle = selectedCharId === 'panda' ? '#f8fafc' : '#1e293b';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 12, 12 * scaleY, 0, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // 눈동자 하이라이트 (반짝임)
+        if (scaleY > 0.4) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(-3, -3 * scaleY, 3.5, 0, 2 * Math.PI);
+          ctx.arc(3, 2 * scaleY, 1.5, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // --- 입 (Mouth & Tongue & Expressions) 그리기 ---
+    function drawCharacterMouth(ctx, jawOpen, smile, exprKey, tongueOut) {
+      ctx.save();
+      ctx.translate(0, 30);
+      ctx.strokeStyle = '#1e293b';
+      ctx.fillStyle = '#1e293b';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+
+      if (exprKey === 'surprised' || jawOpen > 0.35) {
+        // 놀람 / 입 크게 벌림 (타원형 입)
+        const mouthH = Math.min(35, 12 + jawOpen * 40);
+        const mouthW = 18 + jawOpen * 15;
+        
+        ctx.fillStyle = '#991b1b'; // 입 안쪽 붉은색
+        ctx.beginPath();
+        ctx.ellipse(0, 10, mouthW, mouthH, 0, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+
+        // 혀 내밀기 보너스
+        if (tongueOut > 0.3 || exprKey === 'tongue') {
+          ctx.fillStyle = '#f472b6';
+          ctx.beginPath();
+          ctx.ellipse(0, 15 + mouthH * 0.5, 10, 14, 0, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else if (exprKey === 'bigSmile') {
+        // 활짝 웃음 (크고 넓은 웃는 입 + 치아)
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 5, 24, 0, Math.PI, false);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else if (exprKey === 'smile' || smile > 0.3) {
+        // 일반 웃음 (미소 곡선)
+        ctx.fillStyle = 'transparent';
+        ctx.beginPath();
+        ctx.arc(0, 0, 22, 0.1 * Math.PI, 0.9 * Math.PI, false);
+        ctx.stroke();
+      } else if (exprKey === 'sad' || exprKey === 'angry') {
+        // 슬픔 / 화남 (역 U자 입)
+        ctx.fillStyle = 'transparent';
+        ctx.beginPath();
+        ctx.arc(0, 22, 18, 1.2 * Math.PI, 1.8 * Math.PI, false);
+        ctx.stroke();
+
+        // 슬픈 경우 눈물 한 방울 효과
+        if (exprKey === 'sad') {
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(52, -5, 6, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      } else {
+        // 기본 입 (작은 미소 또는 ㅡ 자)
+        ctx.beginPath();
+        ctx.moveTo(-10, 5);
+        ctx.quadraticCurveTo(0, 12, 10, 5);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // --- [13. 스냅샷(사진 저장) 기능] ---
+    function takeSnapshot() {
+      if (!canvasElement) return;
+      
+      // 임시 캔버스를 만들어 배경과 캐릭터를 합쳐서 PNG 다운로드
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasElement.width;
+      tempCanvas.height = canvasElement.height;
+      const tCtx = tempCanvas.getContext('2d');
+
+      // 배경 채우기 (현재 캔버스 컨테이너 스타일과 매칭)
+      tCtx.fillStyle = '#0f172a';
+      tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // 메인 퍼펫 드로잉 복사
+      tCtx.drawImage(canvasElement, 0, 0);
+
+      // 워터마크 추가
+      tCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      tCtx.font = 'bold 14px "Noto Sans KR", sans-serif';
+      tCtx.fillText('✨ 표정 따라쟁이 아바타', 20, tempCanvas.height - 20);
+
+      const dataUrl = tempCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `avatar-puppet-${selectedCharId}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  </script>
+</body>
+</html>
